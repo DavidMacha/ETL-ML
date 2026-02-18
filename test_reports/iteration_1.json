@@ -55,8 +55,7 @@
   ],
   
   "action_item_for_main_agent": {
-    "modal_fix": "Fix modal overlay closing issue in AutoML configuration modal - modal should close properly when clicking outside or cancel button",
-    "status_code_fix": "Consider updating experiment creation endpoint to return 201 status code for consistency (low priority)"
+    "modal_fix": "Fix modal overlay closing issue in AutoML configuration modal - modal should close properly when clicking outside or cancel button"
   },
   
   "should_call_test_agent_after_fix": "false",
