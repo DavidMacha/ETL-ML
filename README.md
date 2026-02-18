@@ -1,4 +1,4 @@
-# ETL & ML Dashboard Platform
+# A Unified ETL and Machine Learning Automation Platform with Real-Time Monitoring and Experiment Tracking
 
 <div align="center">
 
@@ -112,33 +112,33 @@ This project bridges that gap by providing a **unified platform** where:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                           FRONTEND                                   │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐│
-│  │  Dashboard  │  │  Pipelines  │  │ Experiments │  │   AutoML    ││
-│  │   Charts    │  │   Manager   │  │   Tracker   │  │   Engine    ││
-│  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘│
+│                           FRONTEND                                  │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐ │
+│  │  Dashboard  │  │  Pipelines  │  │ Experiments │  │   AutoML    │ │
+│  │   Charts    │  │   Manager   │  │   Tracker   │  │   Engine    │ │
+│  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘ │
 │         │                │                │                │        │
 │         └────────────────┴────────────────┴────────────────┘        │
-│                                   │                                  │
-│                          WebSocket + REST                            │
+│                                   │                                 │
+│                          WebSocket + REST                           │
 └──────────────────────────────────┬──────────────────────────────────┘
                                    │
 ┌──────────────────────────────────┴──────────────────────────────────┐
-│                           BACKEND (FastAPI)                          │
+│                           BACKEND (FastAPI)                         │
 │  ┌─────────────────────────────────────────────────────────────────┐│
-│  │                    Connection Manager (WebSocket)                ││
+│  │                    Connection Manager (WebSocket)               ││
 │  └─────────────────────────────────────────────────────────────────┘│
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐│
-│  │  Pipeline   │  │    ML       │  │   AutoML    │  │    Data     ││
-│  │  Executor   │  │  Service    │  │   Service   │  │  Validator  ││
-│  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘│
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐ │
+│  │  Pipeline   │  │    ML       │  │   AutoML    │  │    Data     │ │
+│  │  Executor   │  │  Service    │  │   Service   │  │  Validator  │ │
+│  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘ │
 │         │                │                │                │        │
 │         └────────────────┴────────────────┴────────────────┘        │
-│                                   │                                  │
+│                                   │                                 │
 └──────────────────────────────────┬──────────────────────────────────┘
                                    │
 ┌──────────────────────────────────┴──────────────────────────────────┐
-│                           DATA LAYER                                 │
+│                           DATA LAYER                                │
 │  ┌─────────────────────┐              ┌─────────────────────┐       │
 │  │      MongoDB        │              │    File Storage     │       │
 │  │  • pipelines        │              │  • Model artifacts  │       │
@@ -252,7 +252,7 @@ This project bridges that gap by providing a **unified platform** where:
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/DavidMacha/ETL-ML.git
+git clone https://github.com/Mattral/ETL-ML.git
 cd ETL-ML
 
 # 2. Setup Backend
@@ -522,6 +522,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 **Built with precision for scale. Designed for humans.**
 
-[Report Bug](https://github.com/DavidMacha/ETL-ML/issues) • [Request Feature](https://github.com/DavidMacha/ETL-ML/issues)
+[Report Bug](https://github.com/Mattral/ETL-ML/issues) • [Request Feature](https://github.com/Mattral/ETL-ML/issues)
 
 </div>
