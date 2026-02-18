@@ -7,7 +7,7 @@
 ![React](https://img.shields.io/badge/react-18+-61DAFB.svg)
 ![License](https://img.shields.io/badge/license-MIT-purple.svg)
 
-**A FAANG-grade platform for managing ETL pipelines, tracking ML experiments, and automating model selection with real-time monitoring.**
+**A platform for managing ETL pipelines, tracking ML experiments, and automating model selection with real-time monitoring.**
 
 [Features](#-features) • [Architecture](#-architecture) • [Setup](#-setup) • [Usage](#-usage) • [API Reference](#-api-reference)
 
