@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import './App.css';
 import {
   LayoutDashboard,
@@ -13,7 +13,6 @@ import {
   Clock,
   Activity,
   Database,
-  Cpu,
   TrendingUp,
   TrendingDown,
   RefreshCw,
@@ -22,7 +21,16 @@ import {
   Box,
   Trash2,
   Eye,
-  AlertTriangle
+  AlertTriangle,
+  Zap,
+  Wifi,
+  WifiOff,
+  Brain,
+  Target,
+  BarChart3,
+  Layers,
+  Plus,
+  Sparkles
 } from 'lucide-react';
 import {
   LineChart,
@@ -36,10 +44,87 @@ import {
   ResponsiveContainer,
   PieChart,
   Pie,
-  Cell
+  Cell,
+  RadarChart,
+  Radar,
+  PolarGrid,
+  PolarAngleAxis,
+  PolarRadiusAxis
 } from 'recharts';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL || '';
+const WS_URL = API_URL.replace('https://', 'wss://').replace('http://', 'ws://') + '/ws';
+
+// ============================================================================
+// WebSocket Hook
+// ============================================================================
+
+const useWebSocket = () => {
+  const [isConnected, setIsConnected] = useState(false);
+  const [lastMessage, setLastMessage] = useState(null);
+  const wsRef = useRef(null);
+  const reconnectTimeoutRef = useRef(null);
+  
+  const connect = useCallback(() => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) return;
+    
+    try {
+      wsRef.current = new WebSocket(WS_URL);
+      
+      wsRef.current.onopen = () => {
+        console.log('WebSocket connected');
+        setIsConnected(true);
+      };
+      
+      wsRef.current.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          setLastMessage(data);
+        } catch (e) {
+          console.error('Failed to parse WebSocket message:', e);
+        }
+      };
+      
+      wsRef.current.onclose = () => {
+        console.log('WebSocket disconnected');
+        setIsConnected(false);
+        // Reconnect after 5 seconds
+        reconnectTimeoutRef.current = setTimeout(connect, 5000);
+      };
+      
+      wsRef.current.onerror = (error) => {
+        console.error('WebSocket error:', error);
+        setIsConnected(false);
+      };
+    } catch (error) {
+      console.error('Failed to create WebSocket:', error);
+      setIsConnected(false);
+    }
+  }, []);
+  
+  const sendMessage = useCallback((message) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify(message));
+    }
+  }, []);
+  
+  useEffect(() => {
+    connect();
+    
+    // Ping every 30 seconds to keep connection alive
+    const pingInterval = setInterval(() => {
+      sendMessage({ type: 'ping' });
+    }, 30000);
+    
+    return () => {
+      clearInterval(pingInterval);
+      clearTimeout(reconnectTimeoutRef.current);
+      wsRef.current?.close();
+    };
+  }, [connect, sendMessage]);
+  
+  return { isConnected, lastMessage, sendMessage };
+};
 
 // ============================================================================
 // API Functions
@@ -71,11 +156,12 @@ const api = {
 // Sidebar Component
 // ============================================================================
 
-const Sidebar = ({ activePage, setActivePage }) => {
+const Sidebar = ({ activePage, setActivePage, isConnected }) => {
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'pipelines', label: 'Pipelines', icon: GitBranch },
     { id: 'experiments', label: 'Experiments', icon: FlaskConical },
+    { id: 'automl', label: 'AutoML', icon: Brain },
     { id: 'validations', label: 'Data Quality', icon: ShieldCheck },
     { id: 'logs', label: 'Logs', icon: ScrollText },
     { id: 'settings', label: 'Settings', icon: Settings },
@@ -85,9 +171,12 @@ const Sidebar = ({ activePage, setActivePage }) => {
     <aside className="sidebar">
       <div className="sidebar-header">
         <div className="sidebar-logo">
-          <Database size={20} color="#fafafa" />
+          <Layers size={20} color="#fafafa" />
         </div>
         <span className="sidebar-title">ETL & ML</span>
+        <div className={`connection-indicator ${isConnected ? 'connected' : 'disconnected'}`} title={isConnected ? 'Real-time connected' : 'Disconnected'}>
+          {isConnected ? <Wifi size={14} /> : <WifiOff size={14} />}
+        </div>
       </div>
       
       <nav className="sidebar-nav">
@@ -100,9 +189,14 @@ const Sidebar = ({ activePage, setActivePage }) => {
           >
             <item.icon size={18} />
             <span>{item.label}</span>
+            {item.id === 'automl' && <Sparkles size={12} className="nav-badge" />}
           </button>
         ))}
       </nav>
+      
+      <div className="sidebar-footer">
+        <div className="version-badge">v2.0.0</div>
+      </div>
     </aside>
   );
 };
@@ -114,7 +208,8 @@ const Sidebar = ({ activePage, setActivePage }) => {
 const StatusBadge = ({ status }) => {
   const getStatusIcon = () => {
     switch (status) {
-      case 'success': return <CheckCircle2 size={12} />;
+      case 'success':
+      case 'completed': return <CheckCircle2 size={12} />;
       case 'failed': return <XCircle size={12} />;
       case 'running': return <Loader2 size={12} className="animate-spin" />;
       case 'pending': return <Clock size={12} />;
@@ -122,8 +217,10 @@ const StatusBadge = ({ status }) => {
     }
   };
 
+  const normalizedStatus = status === 'completed' ? 'success' : status;
+
   return (
-    <span className={`status-badge ${status}`} data-testid={`status-badge-${status}`}>
+    <span className={`status-badge ${normalizedStatus}`} data-testid={`status-badge-${status}`}>
       {getStatusIcon()}
       {status}
     </span>
@@ -134,7 +231,7 @@ const StatusBadge = ({ status }) => {
 // Dashboard Page
 // ============================================================================
 
-const DashboardPage = () => {
+const DashboardPage = ({ lastMessage }) => {
   const [stats, setStats] = useState(null);
   const [metrics, setMetrics] = useState(null);
   const [recentRuns, setRecentRuns] = useState([]);
@@ -162,6 +259,15 @@ const DashboardPage = () => {
     loadData();
   }, [loadData]);
 
+  // Handle real-time updates
+  useEffect(() => {
+    if (lastMessage) {
+      if (lastMessage.type === 'pipeline_completed' || lastMessage.type === 'experiment_completed') {
+        loadData();
+      }
+    }
+  }, [lastMessage, loadData]);
+
   const COLORS = ['#10b981', '#ef4444'];
 
   if (loading) {
@@ -179,7 +285,7 @@ const DashboardPage = () => {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
             <h1 className="page-title">Dashboard</h1>
-            <p className="page-description">Overview of your ETL pipelines and ML experiments</p>
+            <p className="page-description">Real-time overview of ETL pipelines and ML experiments</p>
           </div>
           <button className="btn btn-secondary" data-testid="refresh-dashboard" onClick={loadData}>
             <RefreshCw size={16} />
@@ -191,6 +297,9 @@ const DashboardPage = () => {
       <div className="dashboard-grid">
         {/* Stats Cards */}
         <div className="stat-card" data-testid="stat-total-pipelines">
+          <div className="stat-icon-wrapper">
+            <GitBranch size={20} />
+          </div>
           <div className="stat-label">Total Pipelines</div>
           <div className="stat-value">{stats?.total_pipelines || 0}</div>
           <div className="stat-change positive">
@@ -199,14 +308,20 @@ const DashboardPage = () => {
         </div>
 
         <div className="stat-card" data-testid="stat-experiments">
+          <div className="stat-icon-wrapper experiments">
+            <FlaskConical size={20} />
+          </div>
           <div className="stat-label">Experiments</div>
           <div className="stat-value">{stats?.total_experiments || 0}</div>
           <div className="stat-change positive">
-            <FlaskConical size={12} /> Models: {stats?.total_models || 0}
+            <Box size={12} /> Models: {stats?.total_models || 0}
           </div>
         </div>
 
         <div className="stat-card" data-testid="stat-success-runs">
+          <div className="stat-icon-wrapper success">
+            <CheckCircle2 size={20} />
+          </div>
           <div className="stat-label">Successful Runs</div>
           <div className="stat-value">{stats?.successful_runs_24h || 0}</div>
           <div className="stat-change positive">
@@ -214,17 +329,23 @@ const DashboardPage = () => {
           </div>
         </div>
 
-        <div className="stat-card" data-testid="stat-failed-runs">
-          <div className="stat-label">Failed Runs</div>
-          <div className="stat-value">{stats?.failed_runs_24h || 0}</div>
-          <div className="stat-change negative">
-            <TrendingDown size={12} /> Last 24h
+        <div className="stat-card" data-testid="stat-automl">
+          <div className="stat-icon-wrapper automl">
+            <Brain size={20} />
+          </div>
+          <div className="stat-label">AutoML Runs</div>
+          <div className="stat-value">{stats?.automl_runs || 0}</div>
+          <div className="stat-change positive">
+            <Zap size={12} /> Automated
           </div>
         </div>
 
         {/* Pipeline Runs Chart */}
         <div className="chart-card" data-testid="chart-pipeline-runs">
-          <h3 className="chart-title">Pipeline Runs (Last 7 Days)</h3>
+          <h3 className="chart-title">
+            <BarChart3 size={18} />
+            Pipeline Runs (Last 7 Days)
+          </h3>
           <ResponsiveContainer width="100%" height={250}>
             <BarChart data={metrics?.pipeline_runs || []}>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
@@ -234,15 +355,18 @@ const DashboardPage = () => {
                 contentStyle={{ background: '#121212', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px' }}
                 labelStyle={{ color: '#fafafa' }}
               />
-              <Bar dataKey="success" fill="#10b981" radius={[4, 4, 0, 0]} />
-              <Bar dataKey="failed" fill="#ef4444" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="success" fill="#10b981" radius={[4, 4, 0, 0]} name="Success" />
+              <Bar dataKey="failed" fill="#ef4444" radius={[4, 4, 0, 0]} name="Failed" />
             </BarChart>
           </ResponsiveContainer>
         </div>
 
         {/* Model Accuracy Chart */}
         <div className="chart-card" data-testid="chart-model-accuracy">
-          <h3 className="chart-title">Model Accuracy Trend</h3>
+          <h3 className="chart-title">
+            <Target size={18} />
+            Model Accuracy Trend
+          </h3>
           <ResponsiveContainer width="100%" height={250}>
             <LineChart data={metrics?.model_accuracy || []}>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
@@ -340,7 +464,7 @@ const DashboardPage = () => {
 // Pipelines Page
 // ============================================================================
 
-const PipelinesPage = () => {
+const PipelinesPage = ({ lastMessage }) => {
   const [pipelines, setPipelines] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedPipeline, setSelectedPipeline] = useState(null);
@@ -377,6 +501,18 @@ const PipelinesPage = () => {
     }
   }, [selectedPipeline, loadPipelineRuns]);
 
+  // Handle real-time updates
+  useEffect(() => {
+    if (lastMessage) {
+      if (lastMessage.type === 'pipeline_completed' || lastMessage.type === 'pipeline_failed' || lastMessage.type === 'pipeline_step') {
+        loadPipelines();
+        if (selectedPipeline && lastMessage.data?.pipeline_id === selectedPipeline.id) {
+          loadPipelineRuns(selectedPipeline.id);
+        }
+      }
+    }
+  }, [lastMessage, loadPipelines, selectedPipeline, loadPipelineRuns]);
+
   const runPipeline = async (pipelineId) => {
     try {
       await api.post(`/api/pipelines/${pipelineId}/run`);
@@ -405,7 +541,7 @@ const PipelinesPage = () => {
     <div>
       <div className="page-header">
         <h1 className="page-title">Pipelines</h1>
-        <p className="page-description">Manage and monitor your ETL pipelines</p>
+        <p className="page-description">Manage and monitor your ETL pipelines with real-time updates</p>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: selectedPipeline ? '1fr 1fr' : '1fr', gap: '1.5rem' }}>
@@ -568,11 +704,19 @@ const PipelinesPage = () => {
 // Experiments Page
 // ============================================================================
 
-const ExperimentsPage = () => {
+const ExperimentsPage = ({ lastMessage }) => {
   const [experiments, setExperiments] = useState([]);
   const [models, setModels] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('experiments');
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [newExperiment, setNewExperiment] = useState({
+    name: '',
+    description: '',
+    algorithm: 'RandomForest',
+    n_estimators: 100,
+    max_depth: 10
+  });
 
   const loadData = useCallback(async () => {
     try {
@@ -594,6 +738,32 @@ const ExperimentsPage = () => {
     loadData();
   }, [loadData]);
 
+  // Handle real-time updates
+  useEffect(() => {
+    if (lastMessage?.type === 'experiment_completed') {
+      loadData();
+    }
+  }, [lastMessage, loadData]);
+
+  const createExperiment = async () => {
+    try {
+      await api.post('/api/experiments', {
+        name: newExperiment.name,
+        description: newExperiment.description,
+        algorithm: newExperiment.algorithm,
+        parameters: {
+          n_estimators: newExperiment.n_estimators,
+          max_depth: newExperiment.max_depth
+        }
+      });
+      setShowCreateModal(false);
+      setNewExperiment({ name: '', description: '', algorithm: 'RandomForest', n_estimators: 100, max_depth: 10 });
+      loadData();
+    } catch (err) {
+      console.error('Failed to create experiment:', err);
+    }
+  };
+
   const deleteExperiment = async (expId) => {
     try {
       await api.delete(`/api/experiments/${expId}`);
@@ -606,9 +776,85 @@ const ExperimentsPage = () => {
   return (
     <div>
       <div className="page-header">
-        <h1 className="page-title">Experiments</h1>
-        <p className="page-description">Track ML experiments and model versions</p>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <div>
+            <h1 className="page-title">Experiments</h1>
+            <p className="page-description">Track ML experiments and model versions</p>
+          </div>
+          <button className="btn btn-primary" data-testid="create-experiment-btn" onClick={() => setShowCreateModal(true)}>
+            <Plus size={16} />
+            New Experiment
+          </button>
+        </div>
       </div>
+
+      {showCreateModal && (
+        <div className="modal-overlay" onClick={() => setShowCreateModal(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <h3 style={{ marginBottom: '1.5rem' }}>Create New Experiment</h3>
+            <div className="form-group">
+              <label>Name</label>
+              <input
+                type="text"
+                className="input"
+                value={newExperiment.name}
+                onChange={e => setNewExperiment({...newExperiment, name: e.target.value})}
+                placeholder="Experiment name"
+              />
+            </div>
+            <div className="form-group">
+              <label>Description</label>
+              <input
+                type="text"
+                className="input"
+                value={newExperiment.description}
+                onChange={e => setNewExperiment({...newExperiment, description: e.target.value})}
+                placeholder="Description"
+              />
+            </div>
+            <div className="form-group">
+              <label>Algorithm</label>
+              <select
+                className="input"
+                value={newExperiment.algorithm}
+                onChange={e => setNewExperiment({...newExperiment, algorithm: e.target.value})}
+              >
+                <option value="RandomForest">Random Forest</option>
+                <option value="GradientBoosting">Gradient Boosting</option>
+                <option value="LogisticRegression">Logistic Regression</option>
+                <option value="SVM">SVM</option>
+              </select>
+            </div>
+            <div style={{ display: 'flex', gap: '1rem' }}>
+              <div className="form-group" style={{ flex: 1 }}>
+                <label>N Estimators</label>
+                <input
+                  type="number"
+                  className="input"
+                  value={newExperiment.n_estimators}
+                  onChange={e => setNewExperiment({...newExperiment, n_estimators: parseInt(e.target.value)})}
+                />
+              </div>
+              <div className="form-group" style={{ flex: 1 }}>
+                <label>Max Depth</label>
+                <input
+                  type="number"
+                  className="input"
+                  value={newExperiment.max_depth}
+                  onChange={e => setNewExperiment({...newExperiment, max_depth: parseInt(e.target.value)})}
+                />
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end', marginTop: '1.5rem' }}>
+              <button className="btn btn-secondary" onClick={() => setShowCreateModal(false)}>Cancel</button>
+              <button className="btn btn-primary" onClick={createExperiment} disabled={!newExperiment.name}>
+                <Zap size={16} />
+                Run Experiment
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="tabs">
         <button 
@@ -661,7 +907,7 @@ const ExperimentsPage = () => {
                       <div style={{ fontWeight: 500 }}>{exp.name}</div>
                       <div style={{ fontSize: '0.75rem', color: '#a1a1aa' }}>{exp.id}</div>
                     </td>
-                    <td>{exp.parameters?.algorithm || '-'}</td>
+                    <td>{exp.algorithm || exp.parameters?.algorithm || '-'}</td>
                     <td><StatusBadge status={exp.status === 'completed' ? 'success' : exp.status} /></td>
                     <td>
                       {exp.metrics?.accuracy ? (
@@ -753,6 +999,328 @@ const ExperimentsPage = () => {
           </table>
         </div>
       )}
+    </div>
+  );
+};
+
+// ============================================================================
+// AutoML Page
+// ============================================================================
+
+const AutoMLPage = ({ lastMessage }) => {
+  const [automlRuns, setAutomlRuns] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedRun, setSelectedRun] = useState(null);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [progress, setProgress] = useState(null);
+  const [newAutoML, setNewAutoML] = useState({
+    experiment_name: '',
+    description: '',
+    algorithms: ['RandomForest', 'GradientBoosting', 'LogisticRegression'],
+    cv_folds: 5,
+    max_trials: 20
+  });
+
+  const loadData = useCallback(async () => {
+    try {
+      setLoading(true);
+      const data = await api.get('/api/automl/runs');
+      setAutomlRuns(data);
+    } catch (err) {
+      console.error('Failed to load AutoML runs:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  // Handle real-time updates
+  useEffect(() => {
+    if (lastMessage) {
+      if (lastMessage.type === 'automl_progress') {
+        setProgress(lastMessage.data);
+      } else if (lastMessage.type === 'automl_completed') {
+        loadData();
+        setProgress(null);
+      }
+    }
+  }, [lastMessage, loadData]);
+
+  const runAutoML = async () => {
+    try {
+      await api.post('/api/automl/run', newAutoML);
+      setShowCreateModal(false);
+      setNewAutoML({
+        experiment_name: '',
+        description: '',
+        algorithms: ['RandomForest', 'GradientBoosting', 'LogisticRegression'],
+        cv_folds: 5,
+        max_trials: 20
+      });
+      loadData();
+    } catch (err) {
+      console.error('Failed to run AutoML:', err);
+    }
+  };
+
+  const toggleAlgorithm = (algo) => {
+    const current = newAutoML.algorithms;
+    if (current.includes(algo)) {
+      setNewAutoML({...newAutoML, algorithms: current.filter(a => a !== algo)});
+    } else {
+      setNewAutoML({...newAutoML, algorithms: [...current, algo]});
+    }
+  };
+
+  return (
+    <div>
+      <div className="page-header">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <div>
+            <h1 className="page-title">
+              <Brain size={28} style={{ marginRight: '0.5rem', verticalAlign: 'middle' }} />
+              AutoML
+            </h1>
+            <p className="page-description">Automated machine learning with hyperparameter optimization</p>
+          </div>
+          <button className="btn btn-primary" data-testid="run-automl-btn" onClick={() => setShowCreateModal(true)}>
+            <Sparkles size={16} />
+            New AutoML Run
+          </button>
+        </div>
+      </div>
+
+      {progress && (
+        <div className="automl-progress-banner" data-testid="automl-progress">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+            <Loader2 size={20} className="animate-spin" />
+            <div>
+              <div style={{ fontWeight: 500 }}>AutoML in progress...</div>
+              <div style={{ fontSize: '0.75rem', color: '#a1a1aa' }}>
+                Testing {progress.algorithm} | Progress: {progress.progress?.toFixed(0)}% | Best Score: {progress.current_best_score?.toFixed(4)}
+              </div>
+            </div>
+          </div>
+          <div className="progress-bar" style={{ marginTop: '0.75rem' }}>
+            <div className="progress-fill success" style={{ width: `${progress.progress || 0}%` }} />
+          </div>
+        </div>
+      )}
+
+      {showCreateModal && (
+        <div className="modal-overlay" onClick={() => setShowCreateModal(false)}>
+          <div className="modal modal-lg" onClick={e => e.stopPropagation()}>
+            <h3 style={{ marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <Brain size={24} />
+              Configure AutoML Run
+            </h3>
+            <div className="form-group">
+              <label>Experiment Name</label>
+              <input
+                type="text"
+                className="input"
+                value={newAutoML.experiment_name}
+                onChange={e => setNewAutoML({...newAutoML, experiment_name: e.target.value})}
+                placeholder="e.g., Activity Recognition AutoML"
+              />
+            </div>
+            <div className="form-group">
+              <label>Description</label>
+              <input
+                type="text"
+                className="input"
+                value={newAutoML.description}
+                onChange={e => setNewAutoML({...newAutoML, description: e.target.value})}
+                placeholder="Description of the AutoML run"
+              />
+            </div>
+            <div className="form-group">
+              <label>Algorithms to Test</label>
+              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                {['RandomForest', 'GradientBoosting', 'LogisticRegression', 'SVM'].map(algo => (
+                  <button
+                    key={algo}
+                    className={`algorithm-chip ${newAutoML.algorithms.includes(algo) ? 'active' : ''}`}
+                    onClick={() => toggleAlgorithm(algo)}
+                  >
+                    {newAutoML.algorithms.includes(algo) && <CheckCircle2 size={14} />}
+                    {algo}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: '1rem' }}>
+              <div className="form-group" style={{ flex: 1 }}>
+                <label>Cross-Validation Folds</label>
+                <input
+                  type="number"
+                  className="input"
+                  value={newAutoML.cv_folds}
+                  onChange={e => setNewAutoML({...newAutoML, cv_folds: parseInt(e.target.value)})}
+                  min={2}
+                  max={10}
+                />
+              </div>
+              <div className="form-group" style={{ flex: 1 }}>
+                <label>Max Trials</label>
+                <input
+                  type="number"
+                  className="input"
+                  value={newAutoML.max_trials}
+                  onChange={e => setNewAutoML({...newAutoML, max_trials: parseInt(e.target.value)})}
+                  min={5}
+                  max={100}
+                />
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end', marginTop: '1.5rem' }}>
+              <button className="btn btn-secondary" onClick={() => setShowCreateModal(false)}>Cancel</button>
+              <button 
+                className="btn btn-primary" 
+                onClick={runAutoML} 
+                disabled={!newAutoML.experiment_name || newAutoML.algorithms.length === 0}
+              >
+                <Zap size={16} />
+                Start AutoML
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div style={{ display: 'grid', gridTemplateColumns: selectedRun ? '1fr 1fr' : '1fr', gap: '1.5rem' }}>
+        <div className="table-container" data-testid="automl-runs-table">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Status</th>
+                <th>Algorithms</th>
+                <th>Best Score</th>
+                <th>Trials</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr>
+                  <td colSpan={6} style={{ textAlign: 'center', padding: '2rem' }}>
+                    <Loader2 className="animate-spin" size={24} style={{ margin: '0 auto' }} />
+                  </td>
+                </tr>
+              ) : automlRuns.length === 0 ? (
+                <tr>
+                  <td colSpan={6} style={{ textAlign: 'center', padding: '2rem', color: '#a1a1aa' }}>
+                    No AutoML runs found. Click "New AutoML Run" to start one.
+                  </td>
+                </tr>
+              ) : (
+                automlRuns.map(run => (
+                  <tr key={run.id} style={{ cursor: 'pointer' }} onClick={() => setSelectedRun(run)}>
+                    <td>
+                      <div style={{ fontWeight: 500 }}>{run.name}</div>
+                      <div style={{ fontSize: '0.75rem', color: '#a1a1aa' }}>{run.id}</div>
+                    </td>
+                    <td><StatusBadge status={run.status === 'completed' ? 'success' : run.status} /></td>
+                    <td>
+                      <div style={{ display: 'flex', gap: '0.25rem', flexWrap: 'wrap' }}>
+                        {run.algorithms?.slice(0, 2).map(algo => (
+                          <span key={algo} className="status-badge idle" style={{ fontSize: '0.65rem' }}>{algo}</span>
+                        ))}
+                        {run.algorithms?.length > 2 && <span style={{ fontSize: '0.75rem', color: '#a1a1aa' }}>+{run.algorithms.length - 2}</span>}
+                      </div>
+                    </td>
+                    <td>
+                      {run.best_score ? (
+                        <span style={{ color: '#10b981', fontWeight: 600 }}>
+                          {(run.best_score * 100).toFixed(2)}%
+                        </span>
+                      ) : '-'}
+                    </td>
+                    <td>{run.total_trials || '-'}</td>
+                    <td onClick={e => e.stopPropagation()}>
+                      <button className="btn-icon" onClick={() => setSelectedRun(run)}>
+                        <Eye size={16} />
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {selectedRun && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            <div className="table-container" style={{ padding: '1.5rem' }} data-testid="automl-details">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem' }}>
+                <div>
+                  <h3 style={{ fontSize: '1.125rem', fontWeight: 600 }}>{selectedRun.name}</h3>
+                  <p style={{ fontSize: '0.75rem', color: '#a1a1aa' }}>{selectedRun.description}</p>
+                </div>
+                <StatusBadge status={selectedRun.status === 'completed' ? 'success' : selectedRun.status} />
+              </div>
+
+              {selectedRun.best_algorithm && (
+                <div className="best-model-card">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                    <Target size={18} color="#10b981" />
+                    <span style={{ fontWeight: 600, color: '#10b981' }}>Best Model</span>
+                  </div>
+                  <div style={{ fontSize: '1.5rem', fontWeight: 700 }}>{selectedRun.best_algorithm}</div>
+                  <div style={{ fontSize: '2rem', fontWeight: 700, color: '#10b981' }}>
+                    {(selectedRun.best_score * 100).toFixed(2)}% accuracy
+                  </div>
+                </div>
+              )}
+
+              <div className="metrics-grid" style={{ marginTop: '1rem' }}>
+                <div className="metric-item">
+                  <div className="metric-label">Total Trials</div>
+                  <div className="metric-value">{selectedRun.total_trials || 0}</div>
+                </div>
+                <div className="metric-item">
+                  <div className="metric-label">CV Folds</div>
+                  <div className="metric-value">{selectedRun.cv_folds}</div>
+                </div>
+                <div className="metric-item">
+                  <div className="metric-label">Algorithms</div>
+                  <div className="metric-value">{selectedRun.algorithms?.length || 0}</div>
+                </div>
+                <div className="metric-item">
+                  <div className="metric-label">Metric</div>
+                  <div className="metric-value">{selectedRun.scoring_metric}</div>
+                </div>
+              </div>
+            </div>
+
+            {selectedRun.results?.length > 0 && (
+              <div className="table-container" data-testid="automl-results">
+                <div style={{ padding: '1rem', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+                  <h4 style={{ fontSize: '0.875rem', fontWeight: 600 }}>Algorithm Results</h4>
+                </div>
+                <div style={{ padding: '1rem' }}>
+                  <ResponsiveContainer width="100%" height={200}>
+                    <BarChart data={selectedRun.results.map(r => ({ name: r.algorithm, score: r.test_score * 100 }))}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
+                      <XAxis dataKey="name" stroke="#a1a1aa" fontSize={11} />
+                      <YAxis stroke="#a1a1aa" fontSize={11} domain={[0, 100]} />
+                      <Tooltip 
+                        contentStyle={{ background: '#121212', border: '1px solid rgba(255,255,255,0.1)' }}
+                        formatter={(value) => [value.toFixed(2) + '%', 'Accuracy']}
+                      />
+                      <Bar dataKey="score" fill="#2563eb" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 };
@@ -929,7 +1497,7 @@ const ValidationsPage = () => {
 // Logs Page
 // ============================================================================
 
-const LogsPage = () => {
+const LogsPage = ({ lastMessage }) => {
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
@@ -951,13 +1519,20 @@ const LogsPage = () => {
     loadLogs();
   }, [loadLogs]);
 
+  // Handle real-time log updates
+  useEffect(() => {
+    if (lastMessage?.type === 'log') {
+      setLogs(prev => [lastMessage.data, ...prev.slice(0, 99)]);
+    }
+  }, [lastMessage]);
+
   return (
     <div>
       <div className="page-header">
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
             <h1 className="page-title">Logs</h1>
-            <p className="page-description">System logs and activity history</p>
+            <p className="page-description">Real-time system logs and activity history</p>
           </div>
           <div style={{ display: 'flex', gap: '0.5rem' }}>
             {['all', 'info', 'warning', 'error'].map(level => (
@@ -1071,7 +1646,7 @@ const SettingsPage = () => {
                     Database seeded successfully!
                   </div>
                   <div style={{ color: '#a1a1aa', fontSize: '0.75rem' }}>
-                    Created: {seedResult.pipelines} pipelines, {seedResult.runs} runs, {seedResult.experiments} experiments, {seedResult.models} models
+                    Created: {seedResult.pipelines} pipelines, {seedResult.runs} runs, {seedResult.experiments} experiments, {seedResult.models} models, {seedResult.automl_runs} AutoML runs
                   </div>
                 </div>
               )}
@@ -1080,10 +1655,33 @@ const SettingsPage = () => {
         </div>
 
         <div className="table-container" style={{ padding: '1.5rem' }}>
+          <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.5rem' }}>Features</h3>
+          <div style={{ fontSize: '0.875rem', color: '#a1a1aa' }}>
+            <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+              <li style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 0' }}>
+                <CheckCircle2 size={16} color="#10b981" /> Real-time WebSocket monitoring
+              </li>
+              <li style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 0' }}>
+                <CheckCircle2 size={16} color="#10b981" /> AutoML with hyperparameter tuning
+              </li>
+              <li style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 0' }}>
+                <CheckCircle2 size={16} color="#10b981" /> sklearn model training
+              </li>
+              <li style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 0' }}>
+                <CheckCircle2 size={16} color="#10b981" /> Background pipeline execution
+              </li>
+              <li style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 0' }}>
+                <CheckCircle2 size={16} color="#10b981" /> AWS S3 integration ready
+              </li>
+            </ul>
+          </div>
+        </div>
+
+        <div className="table-container" style={{ padding: '1.5rem' }}>
           <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.5rem' }}>About</h3>
           <div style={{ fontSize: '0.875rem', color: '#a1a1aa' }}>
-            <p style={{ marginBottom: '0.5rem' }}>ETL & ML Dashboard v1.0.0</p>
-            <p>A comprehensive platform for managing ETL pipelines, tracking ML experiments, and monitoring data quality.</p>
+            <p style={{ marginBottom: '0.5rem' }}>ETL & ML Dashboard v2.0.0</p>
+            <p>A comprehensive FAANG-level platform for managing ETL pipelines, tracking ML experiments, and automated machine learning.</p>
           </div>
         </div>
       </div>
@@ -1097,29 +1695,32 @@ const SettingsPage = () => {
 
 function App() {
   const [activePage, setActivePage] = useState('dashboard');
+  const { isConnected, lastMessage, sendMessage } = useWebSocket();
 
   const renderPage = () => {
     switch (activePage) {
       case 'dashboard':
-        return <DashboardPage />;
+        return <DashboardPage lastMessage={lastMessage} />;
       case 'pipelines':
-        return <PipelinesPage />;
+        return <PipelinesPage lastMessage={lastMessage} />;
       case 'experiments':
-        return <ExperimentsPage />;
+        return <ExperimentsPage lastMessage={lastMessage} />;
+      case 'automl':
+        return <AutoMLPage lastMessage={lastMessage} />;
       case 'validations':
         return <ValidationsPage />;
       case 'logs':
-        return <LogsPage />;
+        return <LogsPage lastMessage={lastMessage} />;
       case 'settings':
         return <SettingsPage />;
       default:
-        return <DashboardPage />;
+        return <DashboardPage lastMessage={lastMessage} />;
     }
   };
 
   return (
     <div className="app-container">
-      <Sidebar activePage={activePage} setActivePage={setActivePage} />
+      <Sidebar activePage={activePage} setActivePage={setActivePage} isConnected={isConnected} />
       <main className="main-content" data-testid="main-content">
         {renderPage()}
       </main>
