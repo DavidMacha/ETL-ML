@@ -789,9 +789,19 @@ const ExperimentsPage = ({ lastMessage }) => {
       </div>
 
       {showCreateModal && (
-        <div className="modal-overlay" onClick={() => setShowCreateModal(false)}>
-          <div className="modal" onClick={e => e.stopPropagation()}>
-            <h3 style={{ marginBottom: '1.5rem' }}>Create New Experiment</h3>
+        <div className="modal-overlay" data-testid="experiment-modal-overlay" onClick={() => setShowCreateModal(false)}>
+          <div className="modal" data-testid="experiment-modal" onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+              <h3 style={{ margin: 0 }}>Create New Experiment</h3>
+              <button 
+                className="btn-icon" 
+                data-testid="experiment-modal-close"
+                onClick={() => setShowCreateModal(false)}
+                style={{ padding: '0.25rem' }}
+              >
+                <XCircle size={20} />
+              </button>
+            </div>
             <div className="form-group">
               <label>Name</label>
               <input
