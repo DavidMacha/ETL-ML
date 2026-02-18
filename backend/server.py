@@ -391,31 +391,81 @@ class MLService:
     
     @staticmethod
     def load_sample_data():
-        """Load sample HMP activity recognition data"""
+        """Load sample HMP activity recognition data or generate synthetic data"""
         try:
-            # Try to load real data
+            # Try to load real data from the data directory
             data_path = "/app/data/data.csv"
             if os.path.isdir(data_path):
-                # It's a directory with part files
-                files = [f for f in os.listdir(data_path) if f.endswith('.csv')]
+                files = [f for f in os.listdir(data_path) if f.endswith('.csv') and not f.startswith('part-')]
                 if files:
-                    df = pd.concat([pd.read_csv(os.path.join(data_path, f)) for f in files], ignore_index=True)
-                    return df
+                    dfs = []
+                    for f in files[:5]:  # Limit files for performance
+                        try:
+                            df = pd.read_csv(os.path.join(data_path, f))
+                            # Only keep numeric columns and class column
+                            numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+                            if len(numeric_cols) >= 3:
+                                dfs.append(df[numeric_cols])
+                        except Exception:
+                            continue
+                    if dfs:
+                        return pd.concat(dfs, ignore_index=True)
             elif os.path.isfile(data_path):
-                return pd.read_csv(data_path)
+                df = pd.read_csv(data_path)
+                # Filter to only numeric columns
+                numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+                if len(numeric_cols) >= 3:
+                    return df
         except Exception as e:
             logger.warning(f"Could not load real data: {e}")
         
-        # Generate synthetic data for demonstration
+        # Generate synthetic HMP-like data for demonstration
+        logger.info("Generating synthetic activity recognition data")
         np.random.seed(42)
-        n_samples = 1000
-        data = {
-            'x': np.random.randn(n_samples),
-            'y': np.random.randn(n_samples),
-            'z': np.random.randn(n_samples),
-            'class': np.random.choice(['walking', 'running', 'sitting', 'standing'], n_samples)
-        }
-        return pd.DataFrame(data)
+        n_samples = 2000
+        
+        # Simulate accelerometer data for different activities
+        activities = ['walking', 'running', 'sitting', 'standing', 'climbing', 'lying']
+        data_points = []
+        
+        for activity in activities:
+            n = n_samples // len(activities)
+            if activity == 'walking':
+                x = np.random.normal(0.2, 0.3, n)
+                y = np.random.normal(0.1, 0.2, n)
+                z = np.random.normal(0.8, 0.4, n)
+            elif activity == 'running':
+                x = np.random.normal(0.5, 0.5, n)
+                y = np.random.normal(0.3, 0.4, n)
+                z = np.random.normal(1.2, 0.6, n)
+            elif activity == 'sitting':
+                x = np.random.normal(0.0, 0.1, n)
+                y = np.random.normal(0.0, 0.1, n)
+                z = np.random.normal(1.0, 0.1, n)
+            elif activity == 'standing':
+                x = np.random.normal(0.0, 0.05, n)
+                y = np.random.normal(0.0, 0.05, n)
+                z = np.random.normal(1.0, 0.05, n)
+            elif activity == 'climbing':
+                x = np.random.normal(0.3, 0.4, n)
+                y = np.random.normal(0.4, 0.3, n)
+                z = np.random.normal(0.6, 0.5, n)
+            else:  # lying
+                x = np.random.normal(0.9, 0.1, n)
+                y = np.random.normal(0.0, 0.1, n)
+                z = np.random.normal(0.1, 0.1, n)
+            
+            for i in range(n):
+                data_points.append({
+                    'x': x[i],
+                    'y': y[i],
+                    'z': z[i],
+                    'class': activity
+                })
+        
+        df = pd.DataFrame(data_points)
+        np.random.shuffle(df.values)  # Shuffle the data
+        return df
     
     @staticmethod
     def train_model(algorithm: MLAlgorithm, params: Dict[str, Any], X_train, y_train, X_test, y_test) -> Dict[str, Any]:
