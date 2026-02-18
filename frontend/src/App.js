@@ -1111,12 +1111,22 @@ const AutoMLPage = ({ lastMessage }) => {
       )}
 
       {showCreateModal && (
-        <div className="modal-overlay" onClick={() => setShowCreateModal(false)}>
-          <div className="modal modal-lg" onClick={e => e.stopPropagation()}>
-            <h3 style={{ marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <Brain size={24} />
-              Configure AutoML Run
-            </h3>
+        <div className="modal-overlay" data-testid="automl-modal-overlay" onClick={() => setShowCreateModal(false)}>
+          <div className="modal modal-lg" data-testid="automl-modal" onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+              <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0 }}>
+                <Brain size={24} />
+                Configure AutoML Run
+              </h3>
+              <button 
+                className="btn-icon" 
+                data-testid="automl-modal-close"
+                onClick={() => setShowCreateModal(false)}
+                style={{ padding: '0.25rem' }}
+              >
+                <XCircle size={20} />
+              </button>
+            </div>
             <div className="form-group">
               <label>Experiment Name</label>
               <input
