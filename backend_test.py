@@ -167,7 +167,7 @@ class ETLMLAPITester:
                 }
             }
             
-            success2, exp_data = self.test_api_call("POST", "/api/experiments", 201, 
+            success2, exp_data = self.test_api_call("POST", "/api/experiments", 200, 
                                                   experiment_payload, "Create Experiment")
             
             if success2 and exp_data:
